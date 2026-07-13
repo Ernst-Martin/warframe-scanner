@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #12 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #13 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -657,7 +657,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #12 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #13 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -666,11 +666,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #12 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #13 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #12 · FEHLER", true);
+      set_mode_badge("CLASS #13 · FEHLER", true);
     }
   }
 
@@ -810,6 +810,39 @@ async function run_network_self_test() {
     }
   } catch (test_error) {
     test_result_text += "❌ api.github.com: " + test_error.message + "\n";
+  }
+
+  try {
+    response = await fetch("https://api.codetabs.com/v1/proxy?quest=https://api.github.com/zen");
+    if (response.ok) {
+      test_result_text += "✅ codetabs.com Proxy: OK\n";
+    } else {
+      test_result_text += "⚠️ codetabs.com Proxy: HTTP " + response.status + "\n";
+    }
+  } catch (test_error) {
+    test_result_text += "❌ codetabs.com Proxy: " + test_error.message + "\n";
+  }
+
+  try {
+    response = await fetch("https://api.allorigins.win/raw?url=https://api.github.com/zen");
+    if (response.ok) {
+      test_result_text += "✅ allorigins.win Proxy: OK\n";
+    } else {
+      test_result_text += "⚠️ allorigins.win Proxy: HTTP " + response.status + "\n";
+    }
+  } catch (test_error) {
+    test_result_text += "❌ allorigins.win Proxy: " + test_error.message + "\n";
+  }
+
+  try {
+    response = await fetch("https://api.warframe.market/v2/items");
+    if (response.ok) {
+      test_result_text += "✅ api.warframe.market DIREKT: OK\n";
+    } else {
+      test_result_text += "⚠️ api.warframe.market DIREKT: HTTP " + response.status + "\n";
+    }
+  } catch (test_error) {
+    test_result_text += "❌ api.warframe.market DIREKT: " + test_error.message + "\n";
   }
 
   debug_container.textContent = test_result_text;
