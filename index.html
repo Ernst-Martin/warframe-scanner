@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #8 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #9 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -167,7 +167,8 @@
 const AppConfig = {
   use_mock_mode_fallback: true,
   use_mock_ocr: false,
-  warframe_market_base_url: "https://api.warframe.market/v2"
+  warframe_market_base_url: "https://api.warframe.market/v2",
+  cors_proxy_prefix: "https://corsproxy.io/?url="
 };
 
 class WarframeItem {
@@ -289,6 +290,30 @@ class WarframeMarketService {
     this.is_using_fallback = false;
   }
 
+  async fetch_json_with_fallback(target_url) {
+    let direct_response;
+    let proxy_response;
+    let proxy_url;
+
+    try {
+      direct_response = await fetch(target_url);
+      if (direct_response.ok) {
+        return await direct_response.json();
+      }
+    } catch (direct_error) {
+      console.log("[API] Direkter Zugriff fehlgeschlagen, versuche CORS-Proxy...");
+    }
+
+    proxy_url = AppConfig.cors_proxy_prefix + encodeURIComponent(target_url);
+    proxy_response = await fetch(proxy_url);
+
+    if (!proxy_response.ok) {
+      throw new Error("HTTP " + proxy_response.status + " (auch über Proxy fehlgeschlagen)");
+    }
+
+    return await proxy_response.json();
+  }
+
   extract_display_name(raw_item) {
     if (raw_item.i18n && raw_item.i18n.en && raw_item.i18n.en.name) {
       return raw_item.i18n.en.name;
@@ -300,7 +325,6 @@ class WarframeMarketService {
   }
 
   async fetch_all_items() {
-    let response;
     let json_body;
     let raw_items;
     let index;
@@ -310,13 +334,7 @@ class WarframeMarketService {
 
     console.log("[API] Lade Item-Katalog von " + this.base_url + "/items");
 
-    response = await fetch(this.base_url + "/items");
-
-    if (!response.ok) {
-      throw new Error("HTTP " + response.status + " beim Laden des Katalogs");
-    }
-
-    json_body = await response.json();
+    json_body = await this.fetch_json_with_fallback(this.base_url + "/items");
     raw_items = json_body.data;
     count = raw_items.length;
 
@@ -332,7 +350,6 @@ class WarframeMarketService {
   }
 
   async fetch_top_sell_price(slug) {
-    let response;
     let json_body;
     let sell_orders;
     let cheapest_price;
@@ -340,13 +357,12 @@ class WarframeMarketService {
     let count;
     let order_price;
 
-    response = await fetch(this.base_url + "/orders/item/" + slug + "/top");
-
-    if (!response.ok) {
+    try {
+      json_body = await this.fetch_json_with_fallback(this.base_url + "/orders/item/" + slug + "/top");
+    } catch (fetch_error) {
       return null;
     }
 
-    json_body = await response.json();
     sell_orders = json_body.data && json_body.data.sell ? json_body.data.sell : [];
     count = sell_orders.length;
     cheapest_price = null;
@@ -618,7 +634,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #8 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #9 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -627,10 +643,10 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #8 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #9 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
     } else {
-      set_mode_badge("CLASS #8 · FEHLER", true);
+      set_mode_badge("CLASS #9 · FEHLER", true);
     }
   }
 
