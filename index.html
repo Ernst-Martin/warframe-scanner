@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #9 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #10 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -168,7 +168,7 @@ const AppConfig = {
   use_mock_mode_fallback: true,
   use_mock_ocr: false,
   warframe_market_base_url: "https://api.warframe.market/v2",
-  cors_proxy_prefix: "https://corsproxy.io/?url="
+  cors_proxy_prefix: "https://api.allorigins.win/raw?url="
 };
 
 class WarframeItem {
@@ -294,21 +294,32 @@ class WarframeMarketService {
     let direct_response;
     let proxy_response;
     let proxy_url;
+    let direct_error_message;
+
+    direct_error_message = "";
 
     try {
       direct_response = await fetch(target_url);
       if (direct_response.ok) {
         return await direct_response.json();
       }
+      direct_error_message = "HTTP " + direct_response.status;
     } catch (direct_error) {
-      console.log("[API] Direkter Zugriff fehlgeschlagen, versuche CORS-Proxy...");
+      direct_error_message = direct_error.message;
     }
 
+    console.log("[API] Direkt fehlgeschlagen (" + direct_error_message + "), versuche Proxy...");
+
     proxy_url = AppConfig.cors_proxy_prefix + encodeURIComponent(target_url);
-    proxy_response = await fetch(proxy_url);
+
+    try {
+      proxy_response = await fetch(proxy_url);
+    } catch (proxy_error) {
+      throw new Error("Direkt: " + direct_error_message + " | Proxy: " + proxy_error.message);
+    }
 
     if (!proxy_response.ok) {
-      throw new Error("HTTP " + proxy_response.status + " (auch über Proxy fehlgeschlagen)");
+      throw new Error("Direkt: " + direct_error_message + " | Proxy: HTTP " + proxy_response.status);
     }
 
     return await proxy_response.json();
@@ -634,7 +645,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #9 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #10 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -643,10 +654,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #9 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #10 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
+      document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #9 · FEHLER", true);
+      set_mode_badge("CLASS #10 · FEHLER", true);
     }
   }
 
