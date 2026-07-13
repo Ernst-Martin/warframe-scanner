@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #13 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #14 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -170,7 +170,6 @@ const AppConfig = {
   use_mock_ocr: false,
   warframe_market_base_url: "https://api.warframe.market/v2",
   cors_proxy_prefixes: [
-    "https://api.codetabs.com/v1/proxy?quest=",
     "https://api.allorigins.win/raw?url="
   ]
 };
@@ -348,23 +347,26 @@ class WarframeMarketService {
   }
 
   async fetch_all_items() {
-    let json_body;
+    let response;
     let raw_items;
     let index;
     let count;
     let raw_item;
-    let display_name;
 
-    console.log("[API] Lade Item-Katalog von " + this.base_url + "/items");
+    console.log("[API] Lade lokalen Item-Katalog aus items.json");
 
-    json_body = await this.fetch_json_with_fallback(this.base_url + "/items");
-    raw_items = json_body.data;
+    response = await fetch("./items.json");
+
+    if (!response.ok) {
+      throw new Error("items.json konnte nicht geladen werden (HTTP " + response.status + ")");
+    }
+
+    raw_items = await response.json();
     count = raw_items.length;
 
     for (index = 0; index < count; index++) {
       raw_item = raw_items[index];
-      display_name = this.extract_display_name(raw_item);
-      this.all_items.push(new WarframeItem(display_name, raw_item.slug, null, null));
+      this.all_items.push(new WarframeItem(raw_item.name, raw_item.slug, null, null));
     }
 
     console.log("[API] " + this.all_items.length + " Items geladen");
@@ -657,7 +659,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #13 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #14 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -666,11 +668,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #13 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #14 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #13 · FEHLER", true);
+      set_mode_badge("CLASS #14 · FEHLER", true);
     }
   }
 
