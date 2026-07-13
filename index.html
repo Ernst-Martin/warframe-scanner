@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warframe Market Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<meta name="theme-color" content="#0a0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WF Scanner">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<style>
+  :root {
+    --void-black: #0a0e14;
+    --panel: #12161f;
+    --panel-border: #232a38;
+    --orokin-gold: #d4af6a;
+    --void-cyan: #4ee6ff;
+    --text-main: #e8e6e0;
+    --text-dim: #7d8494;
+    --danger: #ff6b6b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, #10151f 0%, var(--void-black) 60%);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 60px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  header h1 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 26px;
+    margin: 0;
+    color: var(--orokin-gold);
+    text-transform: uppercase;
+  }
+
+  header p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 6px 0 0;
+  }
+
+  .mock-badge {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 4px 10px;
+    border: 1px solid var(--void-cyan);
+    color: var(--void-cyan);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    border-radius: 3px;
+  }
+
+  .panel {
+    max-width: 480px;
+    margin: 0 auto 20px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .panel h2 {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--void-cyan);
+    margin: 0 0 12px;
+  }
+
+  button {
+    width: 100%;
+    padding: 14px;
+    background: var(--orokin-gold);
+    color: #1a1408;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  button:active { transform: scale(0.98); }
+
+  .item-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--panel-border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  .item-row:last-child { border-bottom: none; }
+
+  .item-name { color: var(--text-main); }
+  .item-count { color: var(--text-dim); }
+
+  #debug_output {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    line-height: 1.6;
+  }
+
+  #ocr_preview_container canvas {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Warframe Market Scanner</h1>
+  <p>OCR-basierte Inventar-Bewertung</p>
+  <span class="mock-badge" id="mode_badge">CLASS #8 · LADE KATALOG...</span>
+</header>
+
+<div class="panel">
+  <h2>Screenshot scannen</h2>
+  <input type="file" id="screenshot_input" accept="image/*" style="display:none;">
+  <button id="scan_button" disabled>📷 Screenshot auswählen</button>
+  <div id="ocr_preview_container" style="margin-top:12px; display:none;"></div>
+  <div id="ocr_raw_text_container" style="margin-top:10px; display:none; font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim); white-space:pre-wrap; max-height:120px; overflow-y:auto; background:#0a0e14; border-radius:6px; padding:10px; border:1px solid var(--panel-border);"></div>
+  <div id="debug_output" style="margin-top:14px;"></div>
+</div>
+
+<div class="panel" id="result_panel" style="display:none;">
+  <h2>Erkannte Items</h2>
+  <div id="result_list"></div>
+  <div class="item-row" style="border-top:2px solid var(--orokin-gold); margin-top:6px; padding-top:12px;">
+    <span class="item-name" style="color:var(--orokin-gold); font-weight:600;">GESAMTWERT</span>
+    <span class="item-count" id="total_value" style="color:var(--orokin-gold); font-weight:600;"></span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Warframe Market Katalog</h2>
+  <div id="database_list"></div>
+</div>
+
+<script>
+
+const AppConfig = {
+  use_mock_mode_fallback: true,
+  use_mock_ocr: false,
+  warframe_market_base_url: "https://api.warframe.market/v2"
+};
+
+class WarframeItem {
+  constructor(name, slug, average_platinum, ducat_value) {
+    this.name = name;
+    this.slug = slug;
+    this.average_platinum = average_platinum;
+    this.ducat_value = ducat_value;
+  }
+}
+
+class FallbackItemDatabase {
+  constructor() {
+    let raw_data;
+    let index;
+    let count;
+    let row;
+
+    raw_data = [
+      ["Wisp Prime Blueprint", "wisp_prime_blueprint", 10, 15],
+      ["Wisp Prime Systems", "wisp_prime_systems", 22, 45],
+      ["Wisp Prime Chassis", "wisp_prime_chassis", 14, 45],
+      ["Wisp Prime Neuroptics", "wisp_prime_neuroptics", 18, 65],
+      ["Glaive Prime Blade", "glaive_prime_blade", 30, 65],
+      ["Glaive Prime Disc", "glaive_prime_disc", 18, 45],
+      ["Orthos Prime Handle", "orthos_prime_handle", 5, 15],
+      ["Orthos Prime Blade", "orthos_prime_blade", 6, 15],
+      ["Nekros Prime Chassis", "nekros_prime_chassis", 8, 45],
+      ["Nekros Prime Systems", "nekros_prime_systems", 12, 65],
+      ["Nekros Prime Blueprint", "nekros_prime_blueprint", 5, 15],
+      ["Nekros Prime Neuroptics", "nekros_prime_neuroptics", 9, 45],
+      ["Braton Prime Barrel", "braton_prime_barrel", 4, 15],
+      ["Braton Prime Receiver", "braton_prime_receiver", 6, 25],
+      ["Braton Prime Stock", "braton_prime_stock", 3, 15],
+      ["Akbolto Prime Blueprint", "akbolto_prime_blueprint", 3, 15],
+      ["Akbolto Prime Barrel", "akbolto_prime_barrel", 5, 15],
+      ["Volt Prime Blueprint", "volt_prime_blueprint", 6, 15],
+      ["Volt Prime Chassis", "volt_prime_chassis", 8, 45],
+      ["Volt Prime Systems", "volt_prime_systems", 10, 45],
+      ["Volt Prime Neuroptics", "volt_prime_neuroptics", 12, 65],
+      ["Mag Prime Blueprint", "mag_prime_blueprint", 5, 15],
+      ["Mag Prime Chassis", "mag_prime_chassis", 7, 45],
+      ["Mag Prime Systems", "mag_prime_systems", 9, 45],
+      ["Mag Prime Neuroptics", "mag_prime_neuroptics", 11, 65],
+      ["Nova Prime Blueprint", "nova_prime_blueprint", 15, 15],
+      ["Nova Prime Chassis", "nova_prime_chassis", 20, 65],
+      ["Nova Prime Systems", "nova_prime_systems", 25, 65],
+      ["Nova Prime Neuroptics", "nova_prime_neuroptics", 18, 65],
+      ["Rhino Prime Blueprint", "rhino_prime_blueprint", 8, 15],
+      ["Rhino Prime Chassis", "rhino_prime_chassis", 10, 45],
+      ["Rhino Prime Systems", "rhino_prime_systems", 6, 45],
+      ["Rhino Prime Neuroptics", "rhino_prime_neuroptics", 12, 65],
+      ["Loki Prime Blueprint", "loki_prime_blueprint", 4, 15],
+      ["Loki Prime Chassis", "loki_prime_chassis", 5, 45],
+      ["Loki Prime Systems", "loki_prime_systems", 6, 45],
+      ["Loki Prime Neuroptics", "loki_prime_neuroptics", 7, 65],
+      ["Ember Prime Blueprint", "ember_prime_blueprint", 5, 15],
+      ["Ember Prime Chassis", "ember_prime_chassis", 6, 45],
+      ["Ember Prime Systems", "ember_prime_systems", 7, 45],
+      ["Ember Prime Neuroptics", "ember_prime_neuroptics", 8, 65],
+      ["Trinity Prime Blueprint", "trinity_prime_blueprint", 6, 15],
+      ["Trinity Prime Chassis", "trinity_prime_chassis", 8, 45],
+      ["Trinity Prime Systems", "trinity_prime_systems", 10, 45],
+      ["Trinity Prime Neuroptics", "trinity_prime_neuroptics", 9, 65],
+      ["Saryn Prime Blueprint", "saryn_prime_blueprint", 9, 15],
+      ["Saryn Prime Chassis", "saryn_prime_chassis", 12, 45],
+      ["Saryn Prime Systems", "saryn_prime_systems", 14, 45],
+      ["Saryn Prime Neuroptics", "saryn_prime_neuroptics", 16, 65],
+      ["Nezha Prime Blueprint", "nezha_prime_blueprint", 7, 15],
+      ["Nezha Prime Chassis", "nezha_prime_chassis", 9, 45],
+      ["Nezha Prime Systems", "nezha_prime_systems", 11, 45],
+      ["Nezha Prime Neuroptics", "nezha_prime_neuroptics", 13, 65],
+      ["Titania Prime Blueprint", "titania_prime_blueprint", 10, 15],
+      ["Titania Prime Chassis", "titania_prime_chassis", 12, 45],
+      ["Titania Prime Systems", "titania_prime_systems", 14, 45],
+      ["Titania Prime Neuroptics", "titania_prime_neuroptics", 16, 65],
+      ["Gara Prime Blueprint", "gara_prime_blueprint", 8, 15],
+      ["Gara Prime Chassis", "gara_prime_chassis", 10, 45],
+      ["Gara Prime Systems", "gara_prime_systems", 12, 45],
+      ["Gara Prime Neuroptics", "gara_prime_neuroptics", 14, 65],
+      ["Khora Prime Blueprint", "khora_prime_blueprint", 20, 15],
+      ["Khora Prime Chassis", "khora_prime_chassis", 25, 45],
+      ["Khora Prime Systems", "khora_prime_systems", 30, 45],
+      ["Khora Prime Neuroptics", "khora_prime_neuroptics", 22, 65],
+      ["Boltor Prime Barrel", "boltor_prime_barrel", 6, 15],
+      ["Boltor Prime Receiver", "boltor_prime_receiver", 8, 25],
+      ["Boltor Prime Stock", "boltor_prime_stock", 5, 15],
+      ["Soma Prime Barrel", "soma_prime_barrel", 7, 15],
+      ["Soma Prime Receiver", "soma_prime_receiver", 9, 25],
+      ["Soma Prime Stock", "soma_prime_stock", 6, 15],
+      ["Tigris Prime Barrel", "tigris_prime_barrel", 10, 15],
+      ["Tigris Prime Receiver", "tigris_prime_receiver", 14, 25],
+      ["Lex Prime Barrel", "lex_prime_barrel", 5, 15],
+      ["Lex Prime Receiver", "lex_prime_receiver", 7, 25]
+    ];
+
+    this.items = [];
+    count = raw_data.length;
+
+    for (index = 0; index < count; index++) {
+      row = raw_data[index];
+      this.items.push(new WarframeItem(row[0], row[1], row[2], row[3]));
+    }
+  }
+
+  get_all_items() {
+    return this.items;
+  }
+
+  async get_price_for_item(item) {
+    return item.average_platinum;
+  }
+}
+
+class WarframeMarketService {
+  constructor(base_url) {
+    this.base_url = base_url;
+    this.all_items = [];
+    this.is_using_fallback = false;
+  }
+
+  extract_display_name(raw_item) {
+    if (raw_item.i18n && raw_item.i18n.en && raw_item.i18n.en.name) {
+      return raw_item.i18n.en.name;
+    }
+    if (raw_item.name) {
+      return raw_item.name;
+    }
+    return raw_item.slug;
+  }
+
+  async fetch_all_items() {
+    let response;
+    let json_body;
+    let raw_items;
+    let index;
+    let count;
+    let raw_item;
+    let display_name;
+
+    console.log("[API] Lade Item-Katalog von " + this.base_url + "/items");
+
+    response = await fetch(this.base_url + "/items");
+
+    if (!response.ok) {
+      throw new Error("HTTP " + response.status + " beim Laden des Katalogs");
+    }
+
+    json_body = await response.json();
+    raw_items = json_body.data;
+    count = raw_items.length;
+
+    for (index = 0; index < count; index++) {
+      raw_item = raw_items[index];
+      display_name = this.extract_display_name(raw_item);
+      this.all_items.push(new WarframeItem(display_name, raw_item.slug, null, null));
+    }
+
+    console.log("[API] " + this.all_items.length + " Items geladen");
+
+    return this.all_items;
+  }
+
+  async fetch_top_sell_price(slug) {
+    let response;
+    let json_body;
+    let sell_orders;
+    let cheapest_price;
+    let index;
+    let count;
+    let order_price;
+
+    response = await fetch(this.base_url + "/orders/item/" + slug + "/top");
+
+    if (!response.ok) {
+      return null;
+    }
+
+    json_body = await response.json();
+    sell_orders = json_body.data && json_body.data.sell ? json_body.data.sell : [];
+    count = sell_orders.length;
+    cheapest_price = null;
+
+    for (index = 0; index < count; index++) {
+      order_price = sell_orders[index].platinum;
+      if (cheapest_price === null || order_price < cheapest_price) {
+        cheapest_price = order_price;
+      }
+    }
+
+    return cheapest_price;
+  }
+
+  get_all_items() {
+    return this.all_items;
+  }
+
+  async get_price_for_item(item) {
+    return await this.fetch_top_sell_price(item.slug);
+  }
+}
+
+class OcrService {
+  constructor(name_source) {
+    this.name_source = name_source;
+  }
+
+  scan_screenshot_mock() {
+    let all_items;
+    let detected_names;
+    let random_count;
+    let index;
+    let random_index;
+
+    all_items = this.name_source.get_all_items();
+    detected_names = [];
+    random_count = 3 + Math.floor(Math.random() * 3);
+
+    for (index = 0; index < random_count; index++) {
+      random_index = Math.floor(Math.random() * all_items.length);
+      detected_names.push(all_items[random_index].slug);
+    }
+
+    return detected_names;
+  }
+
+  async preprocess_image(image_file) {
+    let image_element;
+    let canvas;
+    let canvas_context;
+    let scale_factor;
+    let target_width;
+    let target_height;
+    let image_data;
+    let pixel_data;
+    let pixel_index;
+    let gray_value;
+    let threshold_value;
+    let final_value;
+
+    image_element = await this.load_image_element(image_file);
+    scale_factor = 2;
+    target_width = image_element.width * scale_factor;
+    target_height = image_element.height * scale_factor;
+
+    canvas = document.createElement("canvas");
+    canvas.width = target_width;
+    canvas.height = target_height;
+    canvas_context = canvas.getContext("2d");
+    canvas_context.drawImage(image_element, 0, 0, target_width, target_height);
+
+    image_data = canvas_context.getImageData(0, 0, target_width, target_height);
+    pixel_data = image_data.data;
+    threshold_value = 140;
+
+    for (pixel_index = 0; pixel_index < pixel_data.length; pixel_index += 4) {
+      gray_value = (pixel_data[pixel_index] * 0.3) + (pixel_data[pixel_index + 1] * 0.59) + (pixel_data[pixel_index + 2] * 0.11);
+      final_value = gray_value > threshold_value ? 255 : 0;
+      pixel_data[pixel_index] = final_value;
+      pixel_data[pixel_index + 1] = final_value;
+      pixel_data[pixel_index + 2] = final_value;
+    }
+
+    canvas_context.putImageData(image_data, 0, 0);
+
+    return canvas;
+  }
+
+  load_image_element(image_file) {
+    return new Promise(function (resolve, reject) {
+      let image_element;
+      let object_url;
+
+      image_element = new Image();
+      object_url = URL.createObjectURL(image_file);
+
+      image_element.onload = function () {
+        resolve(image_element);
+      };
+      image_element.onerror = function () {
+        reject(new Error("Bild konnte nicht geladen werden"));
+      };
+
+      image_element.src = object_url;
+    });
+  }
+
+  async scan_screenshot_real(image_file, progress_callback) {
+    let preprocessed_canvas;
+    let recognition_result;
+
+    preprocessed_canvas = await this.preprocess_image(image_file);
+    this.last_preprocessed_canvas = preprocessed_canvas;
+
+    recognition_result = await Tesseract.recognize(preprocessed_canvas, "eng", {
+      logger: function (log_entry) {
+        if (log_entry.status === "recognizing text" && progress_callback) {
+          progress_callback(Math.round(log_entry.progress * 100));
+        }
+      }
+    });
+
+    return recognition_result.data.text;
+  }
+}
+
+class MatchResult {
+  constructor(item_name, matched_slug, platinum_price, was_found) {
+    this.item_name = item_name;
+    this.matched_slug = matched_slug;
+    this.platinum_price = platinum_price;
+    this.was_found = was_found;
+  }
+}
+
+class PriceMatchingService {
+  constructor(catalog_source) {
+    this.catalog_source = catalog_source;
+  }
+
+  find_item_by_slug(slug) {
+    let all_items;
+    let index;
+    let count;
+
+    all_items = this.catalog_source.get_all_items();
+    count = all_items.length;
+
+    for (index = 0; index < count; index++) {
+      if (all_items[index].slug === slug) {
+        return all_items[index];
+      }
+    }
+
+    return null;
+  }
+
+  normalize_text(raw_text) {
+    return raw_text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  async match_ocr_text(raw_ocr_text) {
+    let all_items;
+    let normalized_ocr_text;
+    let normalized_item_name;
+    let name_prefix;
+    let prefix_length;
+    let index;
+    let count;
+    let results;
+    let already_matched_slugs;
+    let live_price;
+
+    all_items = this.catalog_source.get_all_items();
+    normalized_ocr_text = this.normalize_text(raw_ocr_text);
+    results = [];
+    already_matched_slugs = [];
+    count = all_items.length;
+    prefix_length = 12;
+
+    for (index = 0; index < count; index++) {
+      normalized_item_name = this.normalize_text(all_items[index].name);
+
+      if (normalized_item_name.length < 6) {
+        continue;
+      }
+
+      name_prefix = normalized_item_name.substring(0, Math.min(prefix_length, normalized_item_name.length));
+
+      if (normalized_ocr_text.includes(name_prefix) && !already_matched_slugs.includes(all_items[index].slug)) {
+        already_matched_slugs.push(all_items[index].slug);
+        live_price = await this.catalog_source.get_price_for_item(all_items[index]);
+        results.push(new MatchResult(all_items[index].name, all_items[index].slug, live_price, true));
+      }
+    }
+
+    return results;
+  }
+
+  async match_detected_slugs(detected_slugs) {
+    let results;
+    let index;
+    let count;
+    let matched_item;
+    let live_price;
+
+    results = [];
+    count = detected_slugs.length;
+
+    for (index = 0; index < count; index++) {
+      matched_item = this.find_item_by_slug(detected_slugs[index]);
+
+      if (matched_item === null) {
+        results.push(new MatchResult(detected_slugs[index], null, null, false));
+        continue;
+      }
+
+      live_price = await this.catalog_source.get_price_for_item(matched_item);
+      results.push(new MatchResult(matched_item.name, matched_item.slug, live_price, true));
+    }
+
+    return results;
+  }
+
+  calculate_total_value(match_results) {
+    let total;
+    let index;
+    let count;
+
+    total = 0;
+    count = match_results.length;
+
+    for (index = 0; index < count; index++) {
+      if (match_results[index].was_found && match_results[index].platinum_price !== null) {
+        total = total + match_results[index].platinum_price;
+      }
+    }
+
+    return total;
+  }
+}
+
+const fallback_item_database = new FallbackItemDatabase();
+const warframe_market_service = new WarframeMarketService(AppConfig.warframe_market_base_url);
+let active_catalog_source = warframe_market_service;
+const ocr_service = new OcrService(active_catalog_source);
+const price_matching_service = new PriceMatchingService(active_catalog_source);
+
+function render_database_summary(item_count, source_label) {
+  let list_container;
+
+  list_container = document.getElementById("database_list");
+  list_container.innerHTML = "<div class='item-row'><span class='item-name'>Quelle</span><span class='item-count'>" + source_label + "</span></div><div class='item-row'><span class='item-name'>Geladene Items</span><span class='item-count'>" + item_count + "</span></div>";
+}
+
+function set_mode_badge(text, is_error) {
+  let badge;
+
+  badge = document.getElementById("mode_badge");
+  badge.textContent = text;
+  badge.style.borderColor = is_error ? "var(--danger)" : "var(--void-cyan)";
+  badge.style.color = is_error ? "var(--danger)" : "var(--void-cyan)";
+}
+
+async function initialize_catalog() {
+  try {
+    await warframe_market_service.fetch_all_items();
+    active_catalog_source = warframe_market_service;
+    ocr_service.name_source = active_catalog_source;
+    price_matching_service.catalog_source = active_catalog_source;
+    set_mode_badge("CLASS #8 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
+  } catch (fetch_error) {
+    console.log("[API] Fehler beim Laden: " + fetch_error.message);
+
+    if (AppConfig.use_mock_mode_fallback) {
+      active_catalog_source = fallback_item_database;
+      ocr_service.name_source = active_catalog_source;
+      price_matching_service.catalog_source = active_catalog_source;
+      set_mode_badge("CLASS #8 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
+    } else {
+      set_mode_badge("CLASS #8 · FEHLER", true);
+    }
+  }
+
+  document.getElementById("scan_button").disabled = false;
+}
+
+function render_match_results(match_results) {
+  let result_container;
+  let total_value_container;
+  let result_panel;
+  let index;
+  let count;
+  let row_html;
+  let total_value;
+  let name_display;
+  let price_display;
+
+  result_container = document.getElementById("result_list");
+  total_value_container = document.getElementById("total_value");
+  result_panel = document.getElementById("result_panel");
+  row_html = "";
+  count = match_results.length;
+
+  for (index = 0; index < count; index++) {
+    name_display = match_results[index].item_name;
+
+    if (match_results[index].was_found && match_results[index].platinum_price !== null) {
+      price_display = match_results[index].platinum_price + "p";
+    } else if (match_results[index].was_found) {
+      price_display = "keine Orders";
+    } else {
+      price_display = "?";
+    }
+
+    row_html += "<div class='item-row'><span class='item-name'>" + name_display + "</span><span class='item-count'>" + price_display + "</span></div>";
+  }
+
+  total_value = price_matching_service.calculate_total_value(match_results);
+
+  result_container.innerHTML = row_html;
+  total_value_container.textContent = "~" + total_value + "p";
+  result_panel.style.display = "block";
+}
+
+function show_raw_ocr_text(raw_text) {
+  let text_container;
+
+  text_container = document.getElementById("ocr_raw_text_container");
+  text_container.textContent = "[Rohtext]\n" + raw_text;
+  text_container.style.display = "block";
+}
+
+function show_ocr_preview() {
+  let preview_container;
+
+  if (!ocr_service.last_preprocessed_canvas) {
+    return;
+  }
+
+  preview_container = document.getElementById("ocr_preview_container");
+  preview_container.innerHTML = "";
+  preview_container.appendChild(ocr_service.last_preprocessed_canvas);
+  preview_container.style.display = "block";
+}
+
+async function handle_screenshot_selected(change_event) {
+  let debug_container;
+  let selected_file;
+  let detected_slugs;
+  let raw_ocr_text;
+  let match_results;
+
+  selected_file = change_event.target.files[0];
+
+  if (!selected_file) {
+    return;
+  }
+
+  debug_container = document.getElementById("debug_output");
+
+  if (AppConfig.use_mock_ocr) {
+    debug_container.textContent = "[OCR] Mock-Modus: simuliere Erkennung...";
+    detected_slugs = ocr_service.scan_screenshot_mock();
+    match_results = await price_matching_service.match_detected_slugs(detected_slugs);
+    debug_container.textContent = "[OCR] " + detected_slugs.length + " Items erkannt (Mock-Modus)";
+    render_match_results(match_results);
+    return;
+  }
+
+  debug_container.textContent = "[OCR] Bild wird gelesen... 0%";
+
+  raw_ocr_text = await ocr_service.scan_screenshot_real(selected_file, function (progress_percent) {
+    debug_container.textContent = "[OCR] Bild wird gelesen... " + progress_percent + "%";
+  });
+
+  show_ocr_preview();
+  show_raw_ocr_text(raw_ocr_text);
+  console.log("[OCR] Erkannter Rohtext:\n" + raw_ocr_text);
+  debug_container.textContent = "[OCR] Text erkannt, gleiche mit Katalog ab...";
+
+  match_results = await price_matching_service.match_ocr_text(raw_ocr_text);
+
+  if (match_results.length === 0) {
+    debug_container.textContent = "[OCR] Keine bekannten Items im Text gefunden. Rohtext siehe Browser-Konsole.";
+  } else {
+    debug_container.textContent = "[OCR] " + match_results.length + " Items im Screenshot erkannt";
+  }
+
+  render_match_results(match_results);
+}
+
+document.getElementById("scan_button").addEventListener("click", function () {
+  document.getElementById("screenshot_input").click();
+});
+
+document.getElementById("screenshot_input").addEventListener("change", handle_screenshot_selected);
+function generate_app_icon_data_url() {
+  let canvas;
+  let canvas_context;
+  let icon_size;
+
+  icon_size = 192;
+  canvas = document.createElement("canvas");
+  canvas.width = icon_size;
+  canvas.height = icon_size;
+  canvas_context = canvas.getContext("2d");
+
+  canvas_context.fillStyle = "#0a0e14";
+  canvas_context.fillRect(0, 0, icon_size, icon_size);
+
+  canvas_context.strokeStyle = "#d4af6a";
+  canvas_context.lineWidth = 6;
+  canvas_context.beginPath();
+  canvas_context.arc(icon_size / 2, icon_size / 2, icon_size / 2 - 14, 0, Math.PI * 2);
+  canvas_context.stroke();
+
+  canvas_context.fillStyle = "#4ee6ff";
+  canvas_context.font = "bold 88px sans-serif";
+  canvas_context.textAlign = "center";
+  canvas_context.textBaseline = "middle";
+  canvas_context.fillText("W", icon_size / 2, icon_size / 2 + 6);
+
+  return canvas.toDataURL("image/png");
+}
+
+function setup_pwa_metadata() {
+  let icon_data_url;
+  let icon_link;
+  let apple_icon_link;
+  let manifest_object;
+  let manifest_blob;
+  let manifest_url;
+  let manifest_link;
+
+  icon_data_url = generate_app_icon_data_url();
+
+  icon_link = document.createElement("link");
+  icon_link.rel = "icon";
+  icon_link.href = icon_data_url;
+  document.head.appendChild(icon_link);
+
+  apple_icon_link = document.createElement("link");
+  apple_icon_link.rel = "apple-touch-icon";
+  apple_icon_link.href = icon_data_url;
+  document.head.appendChild(apple_icon_link);
+
+  manifest_object = {
+    name: "Warframe Market Scanner",
+    short_name: "WF Scanner",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0a0e14",
+    theme_color: "#0a0e14",
+    icons: [{ src: icon_data_url, sizes: "192x192", type: "image/png" }]
+  };
+
+  manifest_blob = new Blob([JSON.stringify(manifest_object)], { type: "application/json" });
+  manifest_url = URL.createObjectURL(manifest_blob);
+
+  manifest_link = document.createElement("link");
+  manifest_link.rel = "manifest";
+  manifest_link.href = manifest_url;
+  document.head.appendChild(manifest_link);
+}
+
+setup_pwa_metadata();
+initialize_catalog();
+
+</script>
+</body>
+</html>
