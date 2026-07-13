@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #10 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #11 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -168,7 +168,10 @@ const AppConfig = {
   use_mock_mode_fallback: true,
   use_mock_ocr: false,
   warframe_market_base_url: "https://api.warframe.market/v2",
-  cors_proxy_prefix: "https://api.allorigins.win/raw?url="
+  cors_proxy_prefixes: [
+    "https://api.codetabs.com/v1/proxy?quest=",
+    "https://api.allorigins.win/raw?url="
+  ]
 };
 
 class WarframeItem {
@@ -292,9 +295,12 @@ class WarframeMarketService {
 
   async fetch_json_with_fallback(target_url) {
     let direct_response;
-    let proxy_response;
-    let proxy_url;
     let direct_error_message;
+    let proxy_index;
+    let proxy_count;
+    let proxy_url;
+    let proxy_response;
+    let last_error_message;
 
     direct_error_message = "";
 
@@ -308,21 +314,26 @@ class WarframeMarketService {
       direct_error_message = direct_error.message;
     }
 
-    console.log("[API] Direkt fehlgeschlagen (" + direct_error_message + "), versuche Proxy...");
+    console.log("[API] Direkt fehlgeschlagen (" + direct_error_message + "), probiere Proxies...");
 
-    proxy_url = AppConfig.cors_proxy_prefix + encodeURIComponent(target_url);
+    last_error_message = "Direkt: " + direct_error_message;
+    proxy_count = AppConfig.cors_proxy_prefixes.length;
 
-    try {
-      proxy_response = await fetch(proxy_url);
-    } catch (proxy_error) {
-      throw new Error("Direkt: " + direct_error_message + " | Proxy: " + proxy_error.message);
+    for (proxy_index = 0; proxy_index < proxy_count; proxy_index++) {
+      proxy_url = AppConfig.cors_proxy_prefixes[proxy_index] + encodeURIComponent(target_url);
+
+      try {
+        proxy_response = await fetch(proxy_url);
+        if (proxy_response.ok) {
+          return await proxy_response.json();
+        }
+        last_error_message = last_error_message + " | Proxy " + (proxy_index + 1) + ": HTTP " + proxy_response.status;
+      } catch (proxy_error) {
+        last_error_message = last_error_message + " | Proxy " + (proxy_index + 1) + ": " + proxy_error.message;
+      }
     }
 
-    if (!proxy_response.ok) {
-      throw new Error("Direkt: " + direct_error_message + " | Proxy: HTTP " + proxy_response.status);
-    }
-
-    return await proxy_response.json();
+    throw new Error(last_error_message);
   }
 
   extract_display_name(raw_item) {
@@ -645,7 +656,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #10 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #11 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -654,11 +665,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #10 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #11 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #10 · FEHLER", true);
+      set_mode_badge("CLASS #11 · FEHLER", true);
     }
   }
 
