@@ -136,13 +136,14 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #11 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #12 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
   <h2>Screenshot scannen</h2>
   <input type="file" id="screenshot_input" accept="image/*" style="display:none;">
   <button id="scan_button" disabled>📷 Screenshot auswählen</button>
+  <button id="network_test_button" style="margin-top:8px; background:var(--void-cyan); color:#0a0e14;">🧪 Netzwerk-Selbsttest</button>
   <div id="ocr_preview_container" style="margin-top:12px; display:none;"></div>
   <div id="ocr_raw_text_container" style="margin-top:10px; display:none; font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim); white-space:pre-wrap; max-height:120px; overflow-y:auto; background:#0a0e14; border-radius:6px; padding:10px; border:1px solid var(--panel-border);"></div>
   <div id="debug_output" style="margin-top:14px;"></div>
@@ -656,7 +657,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #11 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #12 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -665,11 +666,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #11 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #12 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #11 · FEHLER", true);
+      set_mode_badge("CLASS #12 · FEHLER", true);
     }
   }
 
@@ -780,6 +781,41 @@ async function handle_screenshot_selected(change_event) {
 
   render_match_results(match_results);
 }
+
+async function run_network_self_test() {
+  let debug_container;
+  let test_result_text;
+  let response;
+
+  debug_container = document.getElementById("debug_output");
+  test_result_text = "[SELBSTTEST]\n";
+
+  try {
+    response = await fetch("https://jsonplaceholder.typicode.com/todos/1");
+    if (response.ok) {
+      test_result_text += "✅ jsonplaceholder.typicode.com: OK (fetch funktioniert grundsätzlich)\n";
+    } else {
+      test_result_text += "⚠️ jsonplaceholder.typicode.com: HTTP " + response.status + "\n";
+    }
+  } catch (test_error) {
+    test_result_text += "❌ jsonplaceholder.typicode.com: " + test_error.message + "\n";
+  }
+
+  try {
+    response = await fetch("https://api.github.com/zen");
+    if (response.ok) {
+      test_result_text += "✅ api.github.com: OK\n";
+    } else {
+      test_result_text += "⚠️ api.github.com: HTTP " + response.status + "\n";
+    }
+  } catch (test_error) {
+    test_result_text += "❌ api.github.com: " + test_error.message + "\n";
+  }
+
+  debug_container.textContent = test_result_text;
+}
+
+document.getElementById("network_test_button").addEventListener("click", run_network_self_test);
 
 document.getElementById("scan_button").addEventListener("click", function () {
   document.getElementById("screenshot_input").click();
