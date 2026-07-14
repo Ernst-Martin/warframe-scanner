@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -135,31 +135,30 @@
 
 <header>
   <h1>Warframe Market Scanner</h1>
-  <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #16 · LADE KATALOG...</span>
+  <p>OCR-based inventory valuation</p>
+  <span class="mock-badge" id="mode_badge">LOADING CATALOG...</span>
 </header>
 
 <div class="panel">
-  <h2>Screenshot scannen</h2>
+  <h2>Scan Screenshot</h2>
   <input type="file" id="screenshot_input" accept="image/*" style="display:none;">
-  <button id="scan_button" disabled>📷 Screenshot auswählen</button>
-  <button id="network_test_button" style="margin-top:8px; background:var(--void-cyan); color:#0a0e14;">🧪 Netzwerk-Selbsttest</button>
+  <button id="scan_button" disabled>📷 Select Screenshot</button>
   <div id="ocr_preview_container" style="margin-top:12px; display:none;"></div>
   <div id="ocr_raw_text_container" style="margin-top:10px; display:none; font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim); white-space:pre-wrap; max-height:120px; overflow-y:auto; background:#0a0e14; border-radius:6px; padding:10px; border:1px solid var(--panel-border);"></div>
   <div id="debug_output" style="margin-top:14px;"></div>
 </div>
 
 <div class="panel" id="result_panel" style="display:none;">
-  <h2>Erkannte Items</h2>
+  <h2>Detected Items</h2>
   <div id="result_list"></div>
   <div class="item-row" style="border-top:2px solid var(--orokin-gold); margin-top:6px; padding-top:12px;">
-    <span class="item-name" style="color:var(--orokin-gold); font-weight:600;">GESAMTWERT</span>
+    <span class="item-name" style="color:var(--orokin-gold); font-weight:600;">TOTAL VALUE</span>
     <span class="item-count" id="total_value" style="color:var(--orokin-gold); font-weight:600;"></span>
   </div>
 </div>
 
 <div class="panel">
-  <h2>Warframe Market Katalog</h2>
+  <h2>Warframe Market Catalog</h2>
   <div id="database_list"></div>
 </div>
 
@@ -314,9 +313,9 @@ class WarframeMarketService {
       direct_error_message = direct_error.message;
     }
 
-    console.log("[API] Direkt fehlgeschlagen (" + direct_error_message + "), probiere Proxies...");
+    console.log("[API] Direct request failed (" + direct_error_message + "), trying proxies...");
 
-    last_error_message = "Direkt: " + direct_error_message;
+    last_error_message = "Direct: " + direct_error_message;
     proxy_count = AppConfig.cors_proxy_prefixes.length;
 
     for (proxy_index = 0; proxy_index < proxy_count; proxy_index++) {
@@ -353,12 +352,12 @@ class WarframeMarketService {
     let count;
     let raw_item;
 
-    console.log("[API] Lade lokalen Item-Katalog aus items.json");
+    console.log("[API] Loading local item catalog from items.json");
 
     response = await fetch("./items.json");
 
     if (!response.ok) {
-      throw new Error("items.json konnte nicht geladen werden (HTTP " + response.status + ")");
+      throw new Error("items.json could not be loaded (HTTP " + response.status + ")");
     }
 
     raw_items = await response.json();
@@ -369,7 +368,7 @@ class WarframeMarketService {
       this.all_items.push(new WarframeItem(raw_item.name, raw_item.slug, null, null));
     }
 
-    console.log("[API] " + this.all_items.length + " Items geladen");
+    console.log("[API] " + this.all_items.length + " items loaded");
 
     return this.all_items;
   }
@@ -389,6 +388,22 @@ class WarframeMarketService {
     }
 
     sell_orders = json_body.data && json_body.data.sell ? json_body.data.sell : [];
+
+    if (sell_orders.length === 0) {
+      try {
+        json_body = await this.fetch_json_with_fallback(this.base_url + "/orders/item/" + slug);
+        sell_orders = [];
+        count = json_body.data ? json_body.data.length : 0;
+        for (index = 0; index < count; index++) {
+          if (json_body.data[index].type === "sell" && json_body.data[index].platinum) {
+            sell_orders.push(json_body.data[index]);
+          }
+        }
+      } catch (fallback_error) {
+        sell_orders = [];
+      }
+    }
+
     count = sell_orders.length;
     cheapest_price = null;
 
@@ -489,7 +504,7 @@ class OcrService {
         resolve(image_element);
       };
       image_element.onerror = function () {
-        reject(new Error("Bild konnte nicht geladen werden"));
+        reject(new Error("Image could not be loaded"));
       };
 
       image_element.src = object_url;
@@ -672,7 +687,7 @@ function render_database_summary(item_count, source_label) {
   let list_container;
 
   list_container = document.getElementById("database_list");
-  list_container.innerHTML = "<div class='item-row'><span class='item-name'>Quelle</span><span class='item-count'>" + source_label + "</span></div><div class='item-row'><span class='item-name'>Geladene Items</span><span class='item-count'>" + item_count + "</span></div>";
+  list_container.innerHTML = "<div class='item-row'><span class='item-name'>Source</span><span class='item-count'>" + source_label + "</span></div><div class='item-row'><span class='item-name'>Items Loaded</span><span class='item-count'>" + item_count + "</span></div>";
 }
 
 function set_mode_badge(text, is_error) {
@@ -690,20 +705,20 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #16 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
-    console.log("[API] Fehler beim Laden: " + fetch_error.message);
+    console.log("[API] Error loading catalog: " + fetch_error.message);
 
     if (AppConfig.use_mock_mode_fallback) {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #16 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
-      render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
+      set_mode_badge("FALLBACK MOCK (API NOT REACHABLE)", true);
+      render_database_summary(fallback_item_database.get_all_items().length, "Mock Data (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #16 · FEHLER", true);
+      set_mode_badge("ERROR", true);
     }
   }
 
@@ -733,7 +748,7 @@ function render_match_results(match_results) {
     if (match_results[index].was_found && match_results[index].platinum_price !== null) {
       price_display = match_results[index].platinum_price + "p";
     } else if (match_results[index].was_found) {
-      price_display = "keine Orders";
+      price_display = "no orders";
     } else {
       price_display = "?";
     }
@@ -752,7 +767,7 @@ function show_raw_ocr_text(raw_text) {
   let text_container;
 
   text_container = document.getElementById("ocr_raw_text_container");
-  text_container.textContent = "[Rohtext]\n" + raw_text;
+  text_container.textContent = "[Raw Text]\n" + raw_text;
   text_container.style.display = "block";
 }
 
@@ -785,7 +800,7 @@ async function handle_screenshot_selected(change_event) {
   debug_container = document.getElementById("debug_output");
 
   if (AppConfig.use_mock_ocr) {
-    debug_container.textContent = "[OCR] Mock-Modus: simuliere Erkennung...";
+    debug_container.textContent = "[OCR] Mock mode: simulating detection...";
     detected_slugs = ocr_service.scan_screenshot_mock();
     match_results = await price_matching_service.match_detected_slugs(detected_slugs);
     debug_container.textContent = "[OCR] " + detected_slugs.length + " Items erkannt (Mock-Modus)";
@@ -793,101 +808,33 @@ async function handle_screenshot_selected(change_event) {
     return;
   }
 
-  debug_container.textContent = "[OCR] Bild wird gelesen... 0%";
+  debug_container.textContent = "[OCR] Reading image... 0%";
 
   raw_ocr_text = await ocr_service.scan_screenshot_real(selected_file, function (progress_percent) {
-    debug_container.textContent = "[OCR] Bild wird gelesen... " + progress_percent + "%";
+    debug_container.textContent = "[OCR] Reading image... " + progress_percent + "%";
   });
 
   show_ocr_preview();
   show_raw_ocr_text(raw_ocr_text);
-  console.log("[OCR] Erkannter Rohtext:\n" + raw_ocr_text);
-  debug_container.textContent = "[OCR] Text erkannt, gleiche mit Katalog ab...";
+  console.log("[OCR] Recognized raw text:\n" + raw_ocr_text);
+  debug_container.textContent = "[OCR] Text recognized, matching against catalog...";
 
   match_results = await price_matching_service.match_ocr_text(raw_ocr_text, function (total_matches, done_count) {
     if (done_count === undefined) {
-      debug_container.textContent = "[MATCH] " + total_matches + " Items im Text gefunden, hole Live-Preise...";
+      debug_container.textContent = "[MATCH] " + total_matches + " items found in text, fetching live prices...";
     } else {
-      debug_container.textContent = "[MATCH] Preise geholt: " + done_count + " / " + total_matches;
+      debug_container.textContent = "[MATCH] Prices fetched: " + done_count + " / " + total_matches;
     }
   });
 
   if (match_results.length === 0) {
-    debug_container.textContent = "[OCR] Keine bekannten Items im Text gefunden. Rohtext siehe Browser-Konsole.";
+    debug_container.textContent = "[OCR] No known items found in text. See raw text above for details.";
   } else {
-    debug_container.textContent = "[OCR] " + match_results.length + " Items im Screenshot erkannt";
+    debug_container.textContent = "[OCR] " + match_results.length + " items detected in screenshot";
   }
 
   render_match_results(match_results);
 }
-
-async function run_network_self_test() {
-  let debug_container;
-  let test_result_text;
-  let response;
-
-  debug_container = document.getElementById("debug_output");
-  test_result_text = "[SELBSTTEST]\n";
-
-  try {
-    response = await fetch("https://jsonplaceholder.typicode.com/todos/1");
-    if (response.ok) {
-      test_result_text += "✅ jsonplaceholder.typicode.com: OK (fetch funktioniert grundsätzlich)\n";
-    } else {
-      test_result_text += "⚠️ jsonplaceholder.typicode.com: HTTP " + response.status + "\n";
-    }
-  } catch (test_error) {
-    test_result_text += "❌ jsonplaceholder.typicode.com: " + test_error.message + "\n";
-  }
-
-  try {
-    response = await fetch("https://api.github.com/zen");
-    if (response.ok) {
-      test_result_text += "✅ api.github.com: OK\n";
-    } else {
-      test_result_text += "⚠️ api.github.com: HTTP " + response.status + "\n";
-    }
-  } catch (test_error) {
-    test_result_text += "❌ api.github.com: " + test_error.message + "\n";
-  }
-
-  try {
-    response = await fetch("https://api.codetabs.com/v1/proxy?quest=https://api.github.com/zen");
-    if (response.ok) {
-      test_result_text += "✅ codetabs.com Proxy: OK\n";
-    } else {
-      test_result_text += "⚠️ codetabs.com Proxy: HTTP " + response.status + "\n";
-    }
-  } catch (test_error) {
-    test_result_text += "❌ codetabs.com Proxy: " + test_error.message + "\n";
-  }
-
-  try {
-    response = await fetch("https://api.allorigins.win/raw?url=https://api.github.com/zen");
-    if (response.ok) {
-      test_result_text += "✅ allorigins.win Proxy: OK\n";
-    } else {
-      test_result_text += "⚠️ allorigins.win Proxy: HTTP " + response.status + "\n";
-    }
-  } catch (test_error) {
-    test_result_text += "❌ allorigins.win Proxy: " + test_error.message + "\n";
-  }
-
-  try {
-    response = await fetch("https://api.warframe.market/v2/items");
-    if (response.ok) {
-      test_result_text += "✅ api.warframe.market DIREKT: OK\n";
-    } else {
-      test_result_text += "⚠️ api.warframe.market DIREKT: HTTP " + response.status + "\n";
-    }
-  } catch (test_error) {
-    test_result_text += "❌ api.warframe.market DIREKT: " + test_error.message + "\n";
-  }
-
-  debug_container.textContent = test_result_text;
-}
-
-document.getElementById("network_test_button").addEventListener("click", run_network_self_test);
 
 document.getElementById("scan_button").addEventListener("click", function () {
   document.getElementById("screenshot_input").click();
