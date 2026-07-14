@@ -142,7 +142,9 @@
 <div class="panel">
   <h2>Scan Screenshot</h2>
   <input type="file" id="screenshot_input" accept="image/*" style="display:none;">
+  <input type="file" id="camera_input" accept="image/*" capture="environment" style="display:none;">
   <button id="scan_button" disabled>📷 Select Screenshot</button>
+  <button id="camera_button" disabled style="margin-top:8px; background:var(--void-cyan); color:#0a0e14;">📸 Take Photo</button>
   <div id="ocr_preview_container" style="margin-top:12px; display:none;"></div>
   <div id="ocr_raw_text_container" style="margin-top:10px; display:none; font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim); white-space:pre-wrap; max-height:120px; overflow-y:auto; background:#0a0e14; border-radius:6px; padding:10px; border:1px solid var(--panel-border);"></div>
   <div id="debug_output" style="margin-top:14px;"></div>
@@ -281,7 +283,7 @@ class FallbackItemDatabase {
   }
 
   async get_price_for_item(item) {
-    return item.average_platinum;
+    return { price: item.average_platinum, order_count: null };
   }
 }
 
@@ -384,7 +386,7 @@ class WarframeMarketService {
     try {
       json_body = await this.fetch_json_with_fallback(this.base_url + "/orders/item/" + slug + "/top");
     } catch (fetch_error) {
-      return null;
+      return { price: null, order_count: 0 };
     }
 
     sell_orders = json_body.data && json_body.data.sell ? json_body.data.sell : [];
@@ -398,7 +400,7 @@ class WarframeMarketService {
       }
     }
 
-    return cheapest_price;
+    return { price: cheapest_price, order_count: count };
   }
 
   get_all_items() {
@@ -515,17 +517,112 @@ class OcrService {
 }
 
 class MatchResult {
-  constructor(item_name, matched_slug, platinum_price, was_found) {
+  constructor(item_name, matched_slug, platinum_price, was_found, order_count) {
     this.item_name = item_name;
     this.matched_slug = matched_slug;
     this.platinum_price = platinum_price;
     this.was_found = was_found;
+    this.order_count = order_count === undefined ? null : order_count;
   }
 }
 
 class PriceMatchingService {
   constructor(catalog_source) {
     this.catalog_source = catalog_source;
+  }
+
+  find_item_by_name(item_name) {
+    let all_items;
+    let index;
+    let count;
+
+    all_items = this.catalog_source.get_all_items();
+    count = all_items.length;
+
+    for (index = 0; index < count; index++) {
+      if (all_items[index].name === item_name) {
+        return all_items[index];
+      }
+    }
+
+    return null;
+  }
+
+  get_base_name(item_name) {
+    let known_suffixes;
+    let words;
+    let last_word;
+
+    known_suffixes = ["Blueprint", "Chassis", "Systems", "Neuroptics", "Barrel", "Receiver", "Stock", "Handle", "Blade", "Disc", "Grip", "String", "Link", "Stars", "Ornament", "Hilt", "Guard", "Pouch", "Cerebrum", "Head", "Blades"];
+    words = item_name.split(" ");
+    last_word = words[words.length - 1];
+
+    if (known_suffixes.includes(last_word)) {
+      return words.slice(0, words.length - 1).join(" ");
+    }
+
+    return null;
+  }
+
+  async detect_set_bonuses(match_results) {
+    let groups;
+    let index;
+    let count;
+    let base_name;
+    let group_key;
+    let set_item;
+    let set_price_result;
+    let suggestions;
+    let group_names;
+
+    groups = {};
+    count = match_results.length;
+
+    for (index = 0; index < count; index++) {
+      if (!match_results[index].was_found) {
+        continue;
+      }
+
+      base_name = this.get_base_name(match_results[index].item_name);
+
+      if (base_name === null) {
+        continue;
+      }
+
+      if (!groups[base_name]) {
+        groups[base_name] = [];
+      }
+
+      groups[base_name].push(match_results[index].item_name);
+    }
+
+    suggestions = [];
+
+    for (group_key in groups) {
+      group_names = groups[group_key];
+
+      if (group_names.length < 2) {
+        continue;
+      }
+
+      set_item = this.find_item_by_name(group_key + " Set");
+
+      if (set_item === null) {
+        continue;
+      }
+
+      set_price_result = await this.catalog_source.get_price_for_item(set_item);
+
+      suggestions.push({
+        base_name: group_key,
+        parts_found: group_names.length,
+        parts_list: group_names,
+        set_slug: set_item.slug,
+        set_price: set_price_result.price
+      });
+    }
+
+    return suggestions;
   }
 
   find_item_by_slug(slug) {
@@ -607,7 +704,7 @@ class PriceMatchingService {
       batch_results = await Promise.all(batch_promises);
 
       for (batch_index = 0; batch_index < batch_items.length; batch_index++) {
-        results.push(new MatchResult(batch_items[batch_index].name, batch_items[batch_index].slug, batch_results[batch_index], true));
+        results.push(new MatchResult(batch_items[batch_index].name, batch_items[batch_index].slug, batch_results[batch_index].price, true, batch_results[batch_index].order_count));
       }
 
       if (progress_callback) {
@@ -623,7 +720,7 @@ class PriceMatchingService {
     let index;
     let count;
     let matched_item;
-    let live_price;
+    let price_result;
 
     results = [];
     count = detected_slugs.length;
@@ -636,8 +733,8 @@ class PriceMatchingService {
         continue;
       }
 
-      live_price = await this.catalog_source.get_price_for_item(matched_item);
-      results.push(new MatchResult(matched_item.name, matched_item.slug, live_price, true));
+      price_result = await this.catalog_source.get_price_for_item(matched_item);
+      results.push(new MatchResult(matched_item.name, matched_item.slug, price_result.price, true, price_result.order_count));
     }
 
     return results;
@@ -707,9 +804,10 @@ async function initialize_catalog() {
   }
 
   document.getElementById("scan_button").disabled = false;
+  document.getElementById("camera_button").disabled = false;
 }
 
-function render_match_results(match_results) {
+function render_match_results(match_results, set_bonus_suggestions) {
   let result_container;
   let total_value_container;
   let result_panel;
@@ -719,12 +817,43 @@ function render_match_results(match_results) {
   let total_value;
   let name_display;
   let price_display;
+  let highlight_html;
+  let most_valuable_item;
+  let most_traded_item;
+  let suggestions_html;
+  let suggestion_index;
 
   result_container = document.getElementById("result_list");
   total_value_container = document.getElementById("total_value");
   result_panel = document.getElementById("result_panel");
   row_html = "";
   count = match_results.length;
+  most_valuable_item = null;
+  most_traded_item = null;
+
+  for (index = 0; index < count; index++) {
+    if (match_results[index].was_found && match_results[index].platinum_price !== null) {
+      if (most_valuable_item === null || match_results[index].platinum_price > most_valuable_item.platinum_price) {
+        most_valuable_item = match_results[index];
+      }
+    }
+
+    if (match_results[index].was_found && match_results[index].order_count !== null) {
+      if (most_traded_item === null || match_results[index].order_count > most_traded_item.order_count) {
+        most_traded_item = match_results[index];
+      }
+    }
+  }
+
+  highlight_html = "";
+
+  if (most_valuable_item !== null) {
+    highlight_html += "<div class='item-row' style='background:rgba(212,175,106,0.1); border-radius:6px; padding:8px 10px; margin-bottom:8px;'><span class='item-name'>💎 Most Valuable</span><span class='item-count' style='color:var(--orokin-gold);'>" + most_valuable_item.item_name + " (" + most_valuable_item.platinum_price + "p)</span></div>";
+  }
+
+  if (most_traded_item !== null && most_traded_item.order_count > 0) {
+    highlight_html += "<div class='item-row' style='background:rgba(78,230,255,0.1); border-radius:6px; padding:8px 10px; margin-bottom:10px;'><span class='item-name'>🔥 Most Traded</span><span class='item-count' style='color:var(--void-cyan);'>" + most_traded_item.item_name + " (" + most_traded_item.order_count + " sellers)</span></div>";
+  }
 
   for (index = 0; index < count; index++) {
     name_display = match_results[index].item_name;
@@ -746,9 +875,21 @@ function render_match_results(match_results) {
     row_html += "</div>";
   }
 
+  suggestions_html = "";
+
+  if (set_bonus_suggestions && set_bonus_suggestions.length > 0) {
+    suggestions_html += "<div style='margin-top:14px; padding-top:12px; border-top:1px dashed var(--panel-border);'><div style='font-family:\"Rajdhani\",sans-serif; font-size:13px; letter-spacing:0.05em; color:var(--orokin-gold); text-transform:uppercase; margin-bottom:8px;'>📦 Set Bonus Detected</div>";
+
+    for (suggestion_index = 0; suggestion_index < set_bonus_suggestions.length; suggestion_index++) {
+      suggestions_html += "<div class='item-row' style='flex-direction:column; align-items:flex-start; gap:4px;'><div style='display:flex; justify-content:space-between; width:100%;'><span class='item-name'>" + set_bonus_suggestions[suggestion_index].base_name + " Set (" + set_bonus_suggestions[suggestion_index].parts_found + " parts found)</span><span class='item-count' style='color:var(--orokin-gold);'>" + (set_bonus_suggestions[suggestion_index].set_price !== null ? set_bonus_suggestions[suggestion_index].set_price + "p" : "no orders") + "</span></div><a href='https://warframe.market/items/" + set_bonus_suggestions[suggestion_index].set_slug + "' target='_blank' rel='noopener' style='font-size:11px; color:var(--void-cyan); text-decoration:none;'>Compare selling as a set →</a></div>";
+    }
+
+    suggestions_html += "</div>";
+  }
+
   total_value = price_matching_service.calculate_total_value(match_results);
 
-  result_container.innerHTML = row_html;
+  result_container.innerHTML = highlight_html + row_html + suggestions_html;
   total_value_container.textContent = "~" + total_value + "p";
   result_panel.style.display = "block";
 }
@@ -780,6 +921,7 @@ async function handle_screenshot_selected(change_event) {
   let detected_slugs;
   let raw_ocr_text;
   let match_results;
+  let set_bonus_suggestions;
 
   selected_file = change_event.target.files[0];
 
@@ -823,14 +965,20 @@ async function handle_screenshot_selected(change_event) {
     debug_container.textContent = "[OCR] " + match_results.length + " items detected in screenshot";
   }
 
-  render_match_results(match_results);
+  set_bonus_suggestions = await price_matching_service.detect_set_bonuses(match_results);
+  render_match_results(match_results, set_bonus_suggestions);
 }
 
 document.getElementById("scan_button").addEventListener("click", function () {
   document.getElementById("screenshot_input").click();
 });
 
+document.getElementById("camera_button").addEventListener("click", function () {
+  document.getElementById("camera_input").click();
+});
+
 document.getElementById("screenshot_input").addEventListener("change", handle_screenshot_selected);
+document.getElementById("camera_input").addEventListener("change", handle_screenshot_selected);
 function generate_app_icon_data_url() {
   let canvas;
   let canvas_context;
