@@ -129,6 +129,59 @@
     border-radius: 6px;
     border: 1px solid var(--panel-border);
   }
+
+  .tab_bar {
+    display: flex;
+    max-width: 480px;
+    margin: 0 auto 20px;
+    gap: 8px;
+  }
+
+  .tab_button {
+    flex: 1;
+    padding: 10px 4px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--text-dim);
+    border-radius: 8px;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .tab_button.active {
+    background: var(--orokin-gold);
+    color: #1a1408;
+    border-color: var(--orokin-gold);
+  }
+
+  input[type="text"].search_input {
+    width: 100%;
+    padding: 12px;
+    background: #0a0e14;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    color: var(--text-main);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .search_result_row {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--panel-border);
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  .search_result_row:hover {
+    background: rgba(78,230,255,0.08);
+  }
 </style>
 </head>
 <body>
@@ -138,6 +191,14 @@
   <p>OCR-based inventory valuation</p>
   <span class="mock-badge" id="mode_badge">LOADING CATALOG...</span>
 </header>
+
+<div class="tab_bar">
+  <button class="tab_button active" id="tab_button_scanner">📷 Scanner</button>
+  <button class="tab_button" id="tab_button_vaulted">🔒 Vaulted</button>
+  <button class="tab_button" id="tab_button_pricecheck">💰 Price Check</button>
+</div>
+
+<div id="tab_content_scanner">
 
 <div class="panel">
   <h2>Scan Screenshot</h2>
@@ -162,6 +223,28 @@
 <div class="panel">
   <h2>Warframe Market Catalog</h2>
   <div id="database_list"></div>
+</div>
+
+</div>
+
+<div id="tab_content_vaulted" style="display:none;">
+  <div class="panel">
+    <h2>Vaulted Items Browser</h2>
+    <input type="text" class="search_input" id="vaulted_search_input" placeholder="Type to search vaulted items (e.g. Ember Prime)...">
+    <div id="vaulted_results"></div>
+  </div>
+</div>
+
+<div id="tab_content_pricecheck" style="display:none;">
+  <div class="panel">
+    <h2>Price Checker</h2>
+    <input type="text" class="search_input" id="pricecheck_search_input" placeholder="Type an item name (e.g. Braton Prime)...">
+    <div id="pricecheck_suggestions"></div>
+  </div>
+  <div class="panel" id="pricecheck_result_panel" style="display:none;">
+    <h2 id="pricecheck_result_title">Item</h2>
+    <div id="pricecheck_result_content"></div>
+  </div>
 </div>
 
 <script>
@@ -763,21 +846,6 @@ const warframe_market_service = new WarframeMarketService(AppConfig.warframe_mar
 let active_catalog_source = warframe_market_service;
 const ocr_service = new OcrService(active_catalog_source);
 const price_matching_service = new PriceMatchingService(active_catalog_source);
-let vaulted_info_map = {};
-
-async function load_vaulted_info() {
-  let response;
-
-  try {
-    response = await fetch("./vaulted_info.json");
-    if (response.ok) {
-      vaulted_info_map = await response.json();
-      console.log("[VAULTED] Loaded info for " + Object.keys(vaulted_info_map).length + " items");
-    }
-  } catch (load_error) {
-    console.log("[VAULTED] Could not load vaulted_info.json: " + load_error.message);
-  }
-}
 
 function render_database_summary(item_count, source_label) {
   let list_container;
@@ -1067,9 +1135,229 @@ function setup_pwa_metadata() {
   document.head.appendChild(manifest_link);
 }
 
+let vaulted_info_map = {};
+let drop_info_map = {};
+
+async function load_vaulted_info() {
+  let response;
+
+  try {
+    response = await fetch("./vaulted_info.json");
+    if (response.ok) {
+      vaulted_info_map = await response.json();
+      console.log("[VAULTED] Loaded info for " + Object.keys(vaulted_info_map).length + " items");
+    }
+  } catch (load_error) {
+    console.log("[VAULTED] Could not load vaulted_info.json: " + load_error.message);
+  }
+}
+
+async function load_drop_info() {
+  let response;
+
+  try {
+    response = await fetch("./drop_info.json");
+    if (response.ok) {
+      drop_info_map = await response.json();
+      console.log("[DROPS] Loaded drop info for " + Object.keys(drop_info_map).length + " items");
+    }
+  } catch (load_error) {
+    console.log("[DROPS] Could not load drop_info.json: " + load_error.message);
+  }
+}
+
+function switch_tab(tab_name) {
+  let all_tab_contents;
+  let all_tab_buttons;
+  let index;
+
+  all_tab_contents = [
+    document.getElementById("tab_content_scanner"),
+    document.getElementById("tab_content_vaulted"),
+    document.getElementById("tab_content_pricecheck")
+  ];
+
+  all_tab_buttons = [
+    document.getElementById("tab_button_scanner"),
+    document.getElementById("tab_button_vaulted"),
+    document.getElementById("tab_button_pricecheck")
+  ];
+
+  for (index = 0; index < all_tab_contents.length; index++) {
+    all_tab_contents[index].style.display = "none";
+    all_tab_buttons[index].classList.remove("active");
+  }
+
+  if (tab_name === "scanner") {
+    document.getElementById("tab_content_scanner").style.display = "block";
+    document.getElementById("tab_button_scanner").classList.add("active");
+  } else if (tab_name === "vaulted") {
+    document.getElementById("tab_content_vaulted").style.display = "block";
+    document.getElementById("tab_button_vaulted").classList.add("active");
+  } else if (tab_name === "pricecheck") {
+    document.getElementById("tab_content_pricecheck").style.display = "block";
+    document.getElementById("tab_button_pricecheck").classList.add("active");
+  }
+}
+
+function render_vaulted_search(search_text) {
+  let results_container;
+  let normalized_search;
+  let item_name;
+  let row_html;
+  let match_count;
+  let entry;
+
+  results_container = document.getElementById("vaulted_results");
+
+  if (!search_text || search_text.length < 2) {
+    results_container.innerHTML = "<div style='color:var(--text-dim); font-size:12px; padding:10px 0;'>Type at least 2 characters to search...</div>";
+    return;
+  }
+
+  normalized_search = search_text.toLowerCase();
+  row_html = "";
+  match_count = 0;
+
+  for (item_name in vaulted_info_map) {
+    entry = vaulted_info_map[item_name];
+
+    if (!entry.vaulted) {
+      continue;
+    }
+
+    if (item_name.toLowerCase().includes(normalized_search)) {
+      match_count = match_count + 1;
+
+      if (match_count > 40) {
+        continue;
+      }
+
+      row_html += "<div class='item-row'><span class='item-name'>🔒 " + item_name + "</span><span class='item-count'>" + (entry.ducats ? entry.ducats + " ducats" : "") + "</span></div>";
+    }
+  }
+
+  if (match_count === 0) {
+    row_html = "<div style='color:var(--text-dim); font-size:12px; padding:10px 0;'>No vaulted items match \"" + search_text + "\"</div>";
+  } else if (match_count > 40) {
+    row_html += "<div style='color:var(--text-dim); font-size:11px; padding:8px 0;'>Showing first 40 of " + match_count + " matches, refine your search</div>";
+  }
+
+  results_container.innerHTML = row_html;
+}
+
+function render_pricecheck_suggestions(search_text) {
+  let suggestions_container;
+  let all_items;
+  let normalized_search;
+  let index;
+  let count;
+  let row_html;
+  let match_count;
+
+  suggestions_container = document.getElementById("pricecheck_suggestions");
+
+  if (!search_text || search_text.length < 2) {
+    suggestions_container.innerHTML = "";
+    return;
+  }
+
+  all_items = active_catalog_source.get_all_items();
+  normalized_search = search_text.toLowerCase();
+  row_html = "";
+  match_count = 0;
+  count = all_items.length;
+
+  for (index = 0; index < count; index++) {
+    if (all_items[index].name.toLowerCase().includes(normalized_search)) {
+      match_count = match_count + 1;
+
+      if (match_count > 8) {
+        continue;
+      }
+
+      row_html += "<div class='search_result_row' data-slug='" + all_items[index].slug + "' data-name=\"" + all_items[index].name.replace(/"/g, "&quot;") + "\">" + all_items[index].name + "</div>";
+    }
+  }
+
+  suggestions_container.innerHTML = row_html;
+
+  Array.prototype.forEach.call(suggestions_container.querySelectorAll(".search_result_row"), function (row_element) {
+    row_element.addEventListener("click", function () {
+      show_pricecheck_result(row_element.getAttribute("data-name"), row_element.getAttribute("data-slug"));
+    });
+  });
+}
+
+async function show_pricecheck_result(item_name, item_slug) {
+  let result_panel;
+  let result_title;
+  let result_content;
+  let matched_item;
+  let price_result;
+  let content_html;
+  let vaulted_entry;
+  let drop_list;
+  let drop_index;
+
+  result_panel = document.getElementById("pricecheck_result_panel");
+  result_title = document.getElementById("pricecheck_result_title");
+  result_content = document.getElementById("pricecheck_result_content");
+
+  result_title.textContent = item_name;
+  result_content.innerHTML = "<div style='color:var(--text-dim); font-size:12px;'>Fetching live price...</div>";
+  result_panel.style.display = "block";
+
+  matched_item = price_matching_service.find_item_by_slug(item_slug);
+
+  if (matched_item === null) {
+    result_content.innerHTML = "<div style='color:var(--danger); font-size:12px;'>Item not found in catalog.</div>";
+    return;
+  }
+
+  price_result = await active_catalog_source.get_price_for_item(matched_item);
+
+  content_html = "<div class='item-row'><span class='item-name'>Live Price</span><span class='item-count' style='color:var(--orokin-gold);'>" + (price_result.price !== null ? price_result.price + "p" : "no orders") + "</span></div>";
+
+  vaulted_entry = vaulted_info_map[item_name];
+
+  if (vaulted_entry) {
+    content_html += "<div class='item-row'><span class='item-name'>Vaulted</span><span class='item-count'>" + (vaulted_entry.vaulted ? "🔒 Yes" : "No") + "</span></div>";
+    if (vaulted_entry.ducats) {
+      content_html += "<div class='item-row'><span class='item-name'>Ducat Value</span><span class='item-count'>" + vaulted_entry.ducats + " ducats</span></div>";
+    }
+  }
+
+  drop_list = drop_info_map[item_name];
+
+  if (drop_list && drop_list.length > 0) {
+    content_html += "<div style='margin-top:10px; font-family:\"Rajdhani\",sans-serif; font-size:12px; letter-spacing:0.05em; color:var(--void-cyan); text-transform:uppercase;'>Drop Locations</div>";
+    for (drop_index = 0; drop_index < drop_list.length; drop_index++) {
+      content_html += "<div style='font-size:12px; color:var(--text-dim); padding:4px 0; border-bottom:1px solid var(--panel-border);'>" + drop_list[drop_index] + "</div>";
+    }
+  }
+
+  content_html += "<a href='https://warframe.market/items/" + item_slug + "' target='_blank' rel='noopener' style='display:inline-block; margin-top:12px; font-size:12px; color:var(--void-cyan); text-decoration:none;'>Open on Warframe Market →</a>";
+
+  result_content.innerHTML = content_html;
+}
+
+document.getElementById("tab_button_scanner").addEventListener("click", function () { switch_tab("scanner"); });
+document.getElementById("tab_button_vaulted").addEventListener("click", function () { switch_tab("vaulted"); });
+document.getElementById("tab_button_pricecheck").addEventListener("click", function () { switch_tab("pricecheck"); });
+
+document.getElementById("vaulted_search_input").addEventListener("input", function (input_event) {
+  render_vaulted_search(input_event.target.value);
+});
+
+document.getElementById("pricecheck_search_input").addEventListener("input", function (input_event) {
+  render_pricecheck_suggestions(input_event.target.value);
+});
+
 setup_pwa_metadata();
 initialize_catalog();
 load_vaulted_info();
+load_drop_info();
 
 </script>
 </body>
