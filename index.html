@@ -136,7 +136,7 @@
 <header>
   <h1>Warframe Market Scanner</h1>
   <p>OCR-basierte Inventar-Bewertung</p>
-  <span class="mock-badge" id="mode_badge">CLASS #14 · LADE KATALOG...</span>
+  <span class="mock-badge" id="mode_badge">CLASS #16 · LADE KATALOG...</span>
 </header>
 
 <div class="panel">
@@ -550,7 +550,7 @@ class PriceMatchingService {
     return raw_text.toLowerCase().replace(/[^a-z0-9]/g, "");
   }
 
-  async match_ocr_text(raw_ocr_text) {
+  async match_ocr_text(raw_ocr_text, progress_callback) {
     let all_items;
     let normalized_ocr_text;
     let normalized_item_name;
@@ -558,16 +558,22 @@ class PriceMatchingService {
     let prefix_length;
     let index;
     let count;
-    let results;
+    let matched_items;
     let already_matched_slugs;
-    let live_price;
+    let results;
+    let batch_size;
+    let batch_start;
+    let batch_items;
+    let batch_promises;
+    let batch_results;
+    let batch_index;
 
     all_items = this.catalog_source.get_all_items();
     normalized_ocr_text = this.normalize_text(raw_ocr_text);
-    results = [];
+    matched_items = [];
     already_matched_slugs = [];
     count = all_items.length;
-    prefix_length = 12;
+    prefix_length = 16;
 
     for (index = 0; index < count; index++) {
       normalized_item_name = this.normalize_text(all_items[index].name);
@@ -580,8 +586,33 @@ class PriceMatchingService {
 
       if (normalized_ocr_text.includes(name_prefix) && !already_matched_slugs.includes(all_items[index].slug)) {
         already_matched_slugs.push(all_items[index].slug);
-        live_price = await this.catalog_source.get_price_for_item(all_items[index]);
-        results.push(new MatchResult(all_items[index].name, all_items[index].slug, live_price, true));
+        matched_items.push(all_items[index]);
+      }
+    }
+
+    if (progress_callback) {
+      progress_callback(matched_items.length);
+    }
+
+    results = [];
+    batch_size = 4;
+
+    for (batch_start = 0; batch_start < matched_items.length; batch_start += batch_size) {
+      batch_items = matched_items.slice(batch_start, batch_start + batch_size);
+
+      batch_promises = [];
+      for (batch_index = 0; batch_index < batch_items.length; batch_index++) {
+        batch_promises.push(this.catalog_source.get_price_for_item(batch_items[batch_index]));
+      }
+
+      batch_results = await Promise.all(batch_promises);
+
+      for (batch_index = 0; batch_index < batch_items.length; batch_index++) {
+        results.push(new MatchResult(batch_items[batch_index].name, batch_items[batch_index].slug, batch_results[batch_index], true));
+      }
+
+      if (progress_callback) {
+        progress_callback(matched_items.length, results.length);
       }
     }
 
@@ -659,7 +690,7 @@ async function initialize_catalog() {
     active_catalog_source = warframe_market_service;
     ocr_service.name_source = active_catalog_source;
     price_matching_service.catalog_source = active_catalog_source;
-    set_mode_badge("CLASS #14 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
+    set_mode_badge("CLASS #16 · LIVE API (" + warframe_market_service.get_all_items().length + " ITEMS)", false);
     render_database_summary(warframe_market_service.get_all_items().length, "Warframe Market API (live)");
   } catch (fetch_error) {
     console.log("[API] Fehler beim Laden: " + fetch_error.message);
@@ -668,11 +699,11 @@ async function initialize_catalog() {
       active_catalog_source = fallback_item_database;
       ocr_service.name_source = active_catalog_source;
       price_matching_service.catalog_source = active_catalog_source;
-      set_mode_badge("CLASS #14 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
+      set_mode_badge("CLASS #16 · FALLBACK MOCK (API NICHT ERREICHBAR)", true);
       render_database_summary(fallback_item_database.get_all_items().length, "Mock-Daten (Fallback)");
       document.getElementById("database_list").innerHTML += "<div class='item-row' style='color:var(--danger); font-size:11px;'>" + fetch_error.message + "</div>";
     } else {
-      set_mode_badge("CLASS #14 · FEHLER", true);
+      set_mode_badge("CLASS #16 · FEHLER", true);
     }
   }
 
@@ -773,7 +804,13 @@ async function handle_screenshot_selected(change_event) {
   console.log("[OCR] Erkannter Rohtext:\n" + raw_ocr_text);
   debug_container.textContent = "[OCR] Text erkannt, gleiche mit Katalog ab...";
 
-  match_results = await price_matching_service.match_ocr_text(raw_ocr_text);
+  match_results = await price_matching_service.match_ocr_text(raw_ocr_text, function (total_matches, done_count) {
+    if (done_count === undefined) {
+      debug_container.textContent = "[MATCH] " + total_matches + " Items im Text gefunden, hole Live-Preise...";
+    } else {
+      debug_container.textContent = "[MATCH] Preise geholt: " + done_count + " / " + total_matches;
+    }
+  });
 
   if (match_results.length === 0) {
     debug_container.textContent = "[OCR] Keine bekannten Items im Text gefunden. Rohtext siehe Browser-Konsole.";
