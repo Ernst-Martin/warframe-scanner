@@ -1146,6 +1146,7 @@ async function load_vaulted_info() {
     if (response.ok) {
       vaulted_info_map = await response.json();
       console.log("[VAULTED] Loaded info for " + Object.keys(vaulted_info_map).length + " items");
+      render_vaulted_search("");
     }
   } catch (load_error) {
     console.log("[VAULTED] Could not load vaulted_info.json: " + load_error.message);
@@ -1207,40 +1208,43 @@ function render_vaulted_search(search_text) {
   let row_html;
   let match_count;
   let entry;
+  let sorted_names;
+  let name_index;
+  let max_results;
 
   results_container = document.getElementById("vaulted_results");
-
-  if (!search_text || search_text.length < 2) {
-    results_container.innerHTML = "<div style='color:var(--text-dim); font-size:12px; padding:10px 0;'>Type at least 2 characters to search...</div>";
-    return;
-  }
-
-  normalized_search = search_text.toLowerCase();
+  normalized_search = search_text ? search_text.toLowerCase() : "";
   row_html = "";
   match_count = 0;
+  max_results = 60;
 
-  for (item_name in vaulted_info_map) {
+  sorted_names = Object.keys(vaulted_info_map).sort();
+
+  for (name_index = 0; name_index < sorted_names.length; name_index++) {
+    item_name = sorted_names[name_index];
     entry = vaulted_info_map[item_name];
 
     if (!entry.vaulted) {
       continue;
     }
 
-    if (item_name.toLowerCase().includes(normalized_search)) {
-      match_count = match_count + 1;
-
-      if (match_count > 40) {
-        continue;
-      }
-
-      row_html += "<div class='item-row'><span class='item-name'>🔒 " + item_name + "</span><span class='item-count'>" + (entry.ducats ? entry.ducats + " ducats" : "") + "</span></div>";
+    if (normalized_search.length > 0 && !item_name.toLowerCase().includes(normalized_search)) {
+      continue;
     }
+
+    match_count = match_count + 1;
+
+    if (match_count > max_results) {
+      continue;
+    }
+
+    row_html += "<div class='item-row'><span class='item-name'>🔒 " + item_name + "</span><span class='item-count'>" + (entry.ducats ? entry.ducats + " ducats" : "") + "</span></div>";
   }
 
   if (match_count === 0) {
     row_html = "<div style='color:var(--text-dim); font-size:12px; padding:10px 0;'>No vaulted items match \"" + search_text + "\"</div>";
-  } else if (match_count > 40) {
-    row_html += "<div style='color:var(--text-dim); font-size:11px; padding:8px 0;'>Showing first 40 of " + match_count + " matches, refine your search</div>";
+  } else if (match_count > max_results) {
+    row_html += "<div style='color:var(--text-dim); font-size:11px; padding:8px 0;'>Showing " + max_results + " of " + match_count + " vaulted items — type to narrow down</div>";
   }
 
   results_container.innerHTML = row_html;
