@@ -388,22 +388,6 @@ class WarframeMarketService {
     }
 
     sell_orders = json_body.data && json_body.data.sell ? json_body.data.sell : [];
-
-    if (sell_orders.length === 0) {
-      try {
-        json_body = await this.fetch_json_with_fallback(this.base_url + "/orders/item/" + slug);
-        sell_orders = [];
-        count = json_body.data ? json_body.data.length : 0;
-        for (index = 0; index < count; index++) {
-          if (json_body.data[index].type === "sell" && json_body.data[index].platinum) {
-            sell_orders.push(json_body.data[index]);
-          }
-        }
-      } catch (fallback_error) {
-        sell_orders = [];
-      }
-    }
-
     count = sell_orders.length;
     cheapest_price = null;
 
@@ -753,7 +737,13 @@ function render_match_results(match_results) {
       price_display = "?";
     }
 
-    row_html += "<div class='item-row'><span class='item-name'>" + name_display + "</span><span class='item-count'>" + price_display + "</span></div>";
+    row_html += "<div class='item-row' style='flex-direction:column; align-items:flex-start; gap:4px;'><div style='display:flex; justify-content:space-between; width:100%;'><span class='item-name'>" + name_display + "</span><span class='item-count'>" + price_display + "</span></div>";
+
+    if (match_results[index].matched_slug) {
+      row_html += "<a href='https://warframe.market/items/" + match_results[index].matched_slug + "' target='_blank' rel='noopener' style='font-size:11px; color:var(--void-cyan); text-decoration:none;'>Open on Warframe Market →</a>";
+    }
+
+    row_html += "</div>";
   }
 
   total_value = price_matching_service.calculate_total_value(match_results);
